@@ -20,5 +20,8 @@ config/LastScenario.txt
 *.swo
 
 project/*
+project/.DS_Store
+project/FCND_CPPSim*
+
 
 
