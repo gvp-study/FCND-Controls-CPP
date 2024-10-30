@@ -427,7 +427,7 @@ Now that we have all the working parts of a controller, you will put it all toge
  - the orange one is following `traj/FigureEight.txt`
  - the other one is following `traj/FigureEightFF.txt` - for now this is the same trajectory.  For those interested in seeing how you might be able to improve the performance of your drone by adjusting how the trajectory is defined, check out **Extra Challenge 1** below!
 
-How well is your drone able to follow the trajectory?  It is able to hold to the path fairly well?
+###  ###
 
 
 ### Extra Challenge 1 (Optional) ###
@@ -441,26 +441,47 @@ Did the velocity-specified trajectory make a difference? Why?
 
 With the two different trajectories, your drones' motions should look like this:
 
+
+
 <p align="center">
 <img src="animations/scenario5.gif" width="500"/>
 </p>
+Clearly the red drone with the FigureEightFF.txt as its input is tracking the trajectory better. This is due to the extra velocity information it has compared to the orange drone which has the bare FigureEight.txt. The velocity information can help with providing the best velocity commands as inputs to the altitude controller and the lateral controller.
 
+<p align="center">
+<img src="docs/Scenario_5.mov" width="500"/>
+</p>
+
+###  ###
+
+<p align="center">
+<img src="docs/Scenario_5b.mov" width="500"/>
+</p>
+
+###  ###
 
 ### Extra Challenge 2 (Optional) ###
 
-For flying a trajectory, is there a way to provide even more information for even better tracking?
+I think providing the roll pitch and yaw along with XYZ positions and XYZ velocities and their associated angular velocities on the trajectory may help with even better tracking.
 
 How about trying to fly this trajectory as quickly as possible (but within following threshold)!
+
+### Scenario 6 ###
+
+I ran the TestManyQuads and the result is shown below.
+
+###  ###
+
+<p align="center">
+<img src="docs/Scenario_6.mov" width="500"/>
+</p>
+
+###  ###
 
 
 ## Evaluation ##
 
-To assist with tuning of your controller, the simulator contains real time performance evaluation.  We have defined a set of performance metrics for each of the scenarios that your controllers must meet for a successful submission.
-
-There are two ways to view the output of the evaluation:
-
- - in the command line, at the end of each simulation loop, a **PASS** or a **FAIL** for each metric being evaluated in that simulation
- - on the plots, once your quad meets the metrics, you will see a green box appear on the plot notifying you of a **PASS**
+I ensured that the command line in all the scenario_1 to scenario_5 has the PASS based on the metrics.
 
 
 ### Performance Metrics ###
