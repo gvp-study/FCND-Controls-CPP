@@ -19,9 +19,9 @@ config/LastScenario.txt
 *.swp
 *.swo
 
-project/*
+project
 project/.DS_Store
-project/FCND_CPPSim*
+project/FCND-CPPSim*
 
 
 
