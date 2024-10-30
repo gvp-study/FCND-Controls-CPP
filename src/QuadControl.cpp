@@ -7,7 +7,7 @@
 #include "Trajectory.h"
 #include "BaseController.h"
 #include "Math/Mat3x3F.h"
-#include "Math/angles.h"
+#include "Math/Angles.h"
 
 #ifdef __PX4_NUTTX
 #include <systemlib/param/param.h>
@@ -70,7 +70,7 @@ VehicleCommand QuadControl::GenerateMotorCommands(float collThrustCmd, V3F momen
   // You'll need the arm length parameter L, and the drag/thrust ratio kappa
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-  float l = L / sqrt(2.f);
+  float l = L / sqrt(2.0f);
   float F = collThrustCmd;
   float tx = momentCmd.x / l;
   float ty = momentCmd.y / l;
@@ -106,10 +106,10 @@ V3F QuadControl::BodyRateControl(V3F pqrCmd, V3F pqr)
   //  - you'll also need the gain parameter kpPQR (it's a V3F)
  
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-  V3F M = V3F(Ixx, Iyy, Izz);
+  V3F I = V3F(Ixx, Iyy, Izz);
   V3F pqrErr = pqrCmd - pqr;
   V3F pqrU_bar = kpPQR * pqrErr;
-  V3F momentCmd = M * pqrU_bar;
+  V3F momentCmd = I * pqrU_bar;
  
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
@@ -186,18 +186,22 @@ float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, flo
   float thrust = 0;
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-  float z_err = posZCmd - posZ;
-  float z_err_dot = velZCmd - velZ;
-  float b_z = R(2,2);
 
-  float p_term = kpPosZ * z_err;
-  float d_term = kpVelZ * z_err_dot;
-  float i_term = KiPosZ * z_err * dt;
-  
-  float u_1_bar = p_term + d_term + i_term + accelZCmd;
-  
-  float z_acc = (u_1_bar - CONST_GRAVITY) / b_z;
-  thrust = -mass * z_acc;
+  float z_err = posZCmd - posZ;
+  float z_term = kpPosZ * z_err;
+
+  integratedAltitudeError += z_err * dt;
+  float i_term = KiPosZ * integratedAltitudeError;
+
+  float z_dot_cmd = z_term + velZCmd;
+  z_dot_cmd = CONSTRAIN(z_dot_cmd, -maxAscentRate, maxDescentRate);
+
+  float z_dot_err = z_dot_cmd - velZ;
+  float z_dot_term = kpVelZ * z_dot_err;
+  float z_dot_dot_cmd = z_dot_term + i_term +  accelZCmd;
+
+  thrust = -(z_dot_dot_cmd - CONST_GRAVITY) * mass / R(2,2);
+
   /////////////////////////////// END STUDENT CODE ////////////////////////////
   
   return thrust;
@@ -234,7 +238,7 @@ V3F QuadControl::LateralPositionControl(V3F posCmd, V3F velCmd, V3F pos, V3F vel
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
   V3F pos_err = posCmd - pos;
-  V3F vel_cmd = kpPosXY * pos_err;
+  V3F vel_cmd = velCmd + kpPosXY * pos_err;
   
   float vel_mag = vel_cmd.mag();
   if(vel_mag > maxSpeedXY)
@@ -266,14 +270,9 @@ float QuadControl::YawControl(float yawCmd, float yaw)
   //  - use fmodf(foo,b) to unwrap a radian angle measure float foo to range [0,b]. 
   //  - use the yaw control gain parameter kpYaw
 
-  float yawRateCmd = 0.0;
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-  float yawCmd2 = fmodf(yawCmd, 2.0*M_PI);
-  float yaw_err = AngleNormF(yawCmd2 - yaw);
-  yawRateCmd = kpYaw * yaw_err;
-  
-  //printf("Yaw C %.2f (%5.2f) A %.2f Err %.2f RC %.2f\n", yawCmd, yawCmd2, yaw, yaw_err, yawRateCmd);
-
+  float yaw_err = AngleNormF(AngleNormF(yawCmd) - AngleNormF(yaw));
+  float yawRateCmd = kpYaw * yaw_err;
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
   return yawRateCmd;

@@ -1,3 +1,5 @@
+
+
 # FCND Drone Control in 3D #
 
 This is the readme for the C++ project.
@@ -230,25 +232,130 @@ The result of the code and the parameter tuning is shown below.
 
 ### Position/velocity and yaw angle control (scenario 3) ###
 
-Next, you will implement the position, altitude and yaw control for your quad.  For the simulation, you will use `Scenario 3`.  This will create 2 identical quads, one offset from its target point (but initialized with yaw = 0) and second offset from target point but yaw = 45 degrees.
+For Scenario_3, I implemented teh LateralPositionControl and AltitudeControl as shown below.
 
- - implement the code in the function `LateralPositionControl()`
- - implement the code in the function `AltitudeControl()`
- - tune parameters `kpPosZ` and `kpPosZ`
- - tune parameters `kpVelXY` and `kpVelZ`
+```c++
+// returns a desired acceleration in global frame
+V3F QuadControl::LateralPositionControl(V3F posCmd, V3F velCmd, V3F pos, V3F vel, V3F accelCmdFF)
+{
+  // Calculate a desired horizontal acceleration based on 
+  //  desired lateral position/velocity/acceleration and current pose
+  // INPUTS: 
+  //   posCmd: desired position, in NED [m]
+  //   velCmd: desired velocity, in NED [m/s]
+  //   pos: current position, NED [m]
+  //   vel: current velocity, NED [m/s]
+  //   accelCmdFF: feed-forward acceleration, NED [m/s2]
+  // OUTPUT:
+  //   return a V3F with desired horizontal accelerations. 
+  //     the Z component should be 0
+  // HINTS: 
+  //  - use the gain parameters kpPosXY and kpVelXY
+  //  - make sure you limit the maximum horizontal velocity and acceleration
+  //    to maxSpeedXY and maxAccelXY
 
-If successful, the quads should be going to their destination points and tracking error should be going down (as shown below). However, one quad remains rotated in yaw.
+  // make sure we don't have any incoming z-component
+  accelCmdFF.z = 0;
+  velCmd.z = 0;
+  posCmd.z = pos.z;
 
- - implement the code in the function `YawControl()`
- - tune parameters `kpYaw` and the 3rd (z) component of `kpPQR`
+  // we initialize the returned desired acceleration to the feed-forward value.
+  // Make sure to _add_, not simply replace, the result of your controller
+  // to this variable
+  V3F accelCmd = accelCmdFF;
 
-Tune position control for settling time. Don’t try to tune yaw control too tightly, as yaw control requires a lot of control authority from a quadcopter and can really affect other degrees of freedom.  This is why you often see quadcopters with tilted motors, better yaw authority!
+  ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+  V3F pos_err = posCmd - pos;
+  V3F vel_cmd = kpPosXY * pos_err;
+  
+  float vel_mag = vel_cmd.mag();
+  if(vel_mag > maxSpeedXY)
+    vel_cmd = vel_cmd * (maxSpeedXY / vel_mag);
+  
+  V3F vel_err = vel_cmd - vel;
+  V3F acc_cmd = accelCmdFF + kpVelXY * vel_err;
+  
+  float acc_mag = acc_cmd.mag();
+  if(acc_mag > maxAccelXY)
+    acc_cmd = acc_cmd * (maxAccelXY / acc_mag);
+  
+  accelCmd = acc_cmd;
+  /////////////////////////////// END STUDENT CODE ////////////////////////////
+
+  return accelCmd;
+}
+
+```
+
+
+
+```c++
+float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, float velZ, Quaternion<float> attitude, float accelZCmd, float dt)
+{
+  // Calculate desired quad thrust based on altitude setpoint, actual altitude,
+  //   vertical velocity setpoint, actual vertical velocity, and a vertical 
+  //   acceleration feed-forward command
+  // INPUTS: 
+  //   posZCmd, velZCmd: desired vertical position and velocity in NED [m]
+  //   posZ, velZ: current vertical position and velocity in NED [m]
+  //   accelZCmd: feed-forward vertical acceleration in NED [m/s2]
+  //   dt: the time step of the measurements [seconds]
+  // OUTPUT:
+  //   return a collective thrust command in [N]
+
+  // HINTS: 
+  //  - we already provide rotation matrix R: to get element R[1,2] (python) use R(1,2) (C++)
+  //  - you'll need the gain parameters kpPosZ and kpVelZ
+  //  - maxAscentRate and maxDescentRate are maximum vertical speeds. Note they're both >=0!
+  //  - make sure to return a force, not an acceleration
+  //  - remember that for an upright quad in NED, thrust should be HIGHER if the desired Z acceleration is LOWER
+
+  Mat3x3F R = attitude.RotationMatrix_IwrtB();
+  float thrust = 0;
+
+  ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+  float z_err = posZCmd - posZ;
+  float z_err_dot = velZCmd - velZ;
+  float b_z = R(2,2);
+
+  float p_term = kpPosZ * z_err;
+  float d_term = kpVelZ * z_err_dot;
+  float i_term = KiPosZ * z_err * dt;
+  
+  float u_1_bar = p_term + d_term + i_term + accelZCmd;
+  
+  float z_acc = (u_1_bar - CONST_GRAVITY) / b_z;
+  thrust = -mass * z_acc;
+  /////////////////////////////// END STUDENT CODE ////////////////////////////
+  
+  return thrust;
+}
+```
+
+I experimented with the parameters kpPosXY, KpPosZ, kpVelXY, kpVelZ till I found these values by trial and error.
+
+```json
+# Position control gains
+kpPosXY = 4
+kpPosZ = 4
+KiPosZ = 80
+
+# Velocity control gains
+kpVelXY = 16
+kpVelZ = 16
+
+# Angle control gains
+kpBank = 15
+kpYaw = 4
+```
+
+
+
+The video below shows the first quad1 starting from 45 degree away from the target yaw and reach the target yaw angle gently. The gains also do not affect quad2 which starts with the target yaw angle.
 
 <p align="center">
-<img src="animations/scenario3.gif" width="500"/>
+<img src="docs/Scenario_3.mov" width="500"/>
 </p>
-
-**Hint:**  For a second order system, such as the one for this quadcopter, the velocity gain (`kpVelXY` and `kpVelZ`) should be at least ~3-4 times greater than the respective position gain (`kpPosXY` and `kpPosZ`).
 
 ### Non-idealities and robustness (scenario 4) ###
 
@@ -257,16 +364,62 @@ In this part, we will explore some of the non-idealities and robustness of a con
  - The orange vehicle is an ideal quad
  - The red vehicle is heavier than usual
 
-1. Run your controller & parameter set from Step 3.  Do all the quads seem to be moving OK?  If not, try to tweak the controller parameters to work for all 3 (tip: relax the controller).
+1. Edited `AltitudeControl()` to add basic integral control to help with the different-mass vehicle.
 
-2. Edit `AltitudeControl()` to add basic integral control to help with the different-mass vehicle.
+   ```c++
+   float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, float velZ, Quaternion<float> attitude, float accelZCmd, float dt)
+   {
+     // Calculate desired quad thrust based on altitude setpoint, actual altitude,
+     //   vertical velocity setpoint, actual vertical velocity, and a vertical 
+     //   acceleration feed-forward command
+     // INPUTS: 
+     //   posZCmd, velZCmd: desired vertical position and velocity in NED [m]
+     //   posZ, velZ: current vertical position and velocity in NED [m]
+     //   accelZCmd: feed-forward vertical acceleration in NED [m/s2]
+     //   dt: the time step of the measurements [seconds]
+     // OUTPUT:
+     //   return a collective thrust command in [N]
+   
+     // HINTS: 
+     //  - we already provide rotation matrix R: to get element R[1,2] (python) use R(1,2) (C++)
+     //  - you'll need the gain parameters kpPosZ and kpVelZ
+     //  - maxAscentRate and maxDescentRate are maximum vertical speeds. Note they're both >=0!
+     //  - make sure to return a force, not an acceleration
+     //  - remember that for an upright quad in NED, thrust should be HIGHER if the desired Z acceleration is LOWER
+   
+     Mat3x3F R = attitude.RotationMatrix_IwrtB();
+     float thrust = 0;
+   
+     ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+   
+     float z_err = posZCmd - posZ;
+     float z_term = kpPosZ * z_err;
+   
+     integratedAltitudeError += z_err * dt;
+     float i_term = KiPosZ * integratedAltitudeError;
+   
+     float z_dot_cmd = z_term + velZCmd;
+     z_dot_cmd = CONSTRAIN(z_dot_cmd, -maxAscentRate, maxDescentRate);
+   
+     float z_dot_err = z_dot_cmd - velZ;
+     float z_dot_term = kpVelZ * z_dot_err;
+     float z_dot_dot_cmd = z_dot_term + i_term +  accelZCmd;
+   
+     thrust = -(z_dot_dot_cmd - CONST_GRAVITY) * mass / R(2,2);
+   
+     /////////////////////////////// END STUDENT CODE ////////////////////////////
+     
+     return thrust;
+   }
+   ```
 
-3. Tune the integral control, and other control parameters until all the quads successfully move properly.  Your drones' motion should look like this:
+   
+
+2. Changed the the kpPosXY = 3, kpPosZ = 8 and KiPosZ = 2 to make it work for all three cases as shown in the video below.
 
 <p align="center">
-<img src="animations/scenario4.gif" width="500"/>
+<img src="docs/Scenario_4.mov" width="500"/>
 </p>
-
 
 ### Tracking trajectories ###
 
