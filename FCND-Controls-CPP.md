@@ -481,7 +481,28 @@ I ran the TestManyQuads and the result is shown below.
 
 ## Evaluation ##
 
-I ensured that the command line in all the scenario_1 to scenario_5 has the PASS based on the metrics.
+I tuned the QuadControlParameters as shown below and ensured that the command line in all the scenario_1 to scenario_5 indicated PASS based on the metrics.
+
+The hardest and most sensitive parameters where the KpPosZ and KiPosZ values which had to set high for the NonIdealities scenario to work, but those high values resulted in overshoot for the trajectory following.
+
+```js
+# Position control gains
+kpPosXY = 3
+kpPosZ = 8
+KiPosZ = 2
+
+# Velocity control gains
+kpVelXY = 9
+kpVelZ = 8
+
+# Angle control gains
+kpBank = 15
+kpYaw = 6
+
+# Angle rate gains
+kpPQR = 50, 50, 10
+
+```
 
 
 ### Performance Metrics ###
