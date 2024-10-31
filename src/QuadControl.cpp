@@ -106,12 +106,11 @@ V3F QuadControl::BodyRateControl(V3F pqrCmd, V3F pqr)
   //  - you'll also need the gain parameter kpPQR (it's a V3F)
  
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-  V3F I = V3F(Ixx, Iyy, Izz);
+  V3F MoI = V3F(Ixx, Iyy, Izz);
   V3F pqrErr = pqrCmd - pqr;
   V3F pqrU_bar = kpPQR * pqrErr;
-  V3F momentCmd = I * pqrU_bar;
- 
-  /////////////////////////////// END STUDENT CODE ////////////////////////////
+  V3F momentCmd = MoI * pqrU_bar;
+   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
   return momentCmd;
 }
@@ -137,16 +136,18 @@ V3F QuadControl::RollPitchControl(V3F accelCmd, Quaternion<float> attitude, floa
   
   V3F pqrCmd(0.0, 0.0, 0.0);
   Mat3x3F R = attitude.RotationMatrix_IwrtB();
-  float cmdByM = collThrustCmd / mass;
+
+  ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////  
+  float netAccel = collThrustCmd / mass;
 
   if ( collThrustCmd > 0 ) {  
     float b_x = R(0,2);
-    float b_x_c = -CONSTRAIN(accelCmd.x / cmdByM, -maxTiltAngle, maxTiltAngle);
+    float b_x_c = -CONSTRAIN(accelCmd.x / netAccel, -maxTiltAngle, maxTiltAngle);
     float b_x_err = b_x_c - b_x;
     float b_x_p_term = kpBank * b_x_err;
     
     float b_y = R(1,2);
-    float b_y_c = -CONSTRAIN(accelCmd.y / cmdByM, -maxTiltAngle, maxTiltAngle);
+    float b_y_c = -CONSTRAIN(accelCmd.y / netAccel, -maxTiltAngle, maxTiltAngle);
     float b_y_err = b_y_c - b_y; 
     float b_y_p_term = kpBank * b_y_err;
     
@@ -186,7 +187,6 @@ float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, flo
   float thrust = 0;
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-
   float z_err = posZCmd - posZ;
   float z_term = kpPosZ * z_err;
 
@@ -201,7 +201,6 @@ float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, flo
   float z_dot_dot_cmd = z_dot_term + i_term +  accelZCmd;
 
   thrust = -(z_dot_dot_cmd - CONST_GRAVITY) * mass / R(2,2);
-
   /////////////////////////////// END STUDENT CODE ////////////////////////////
   
   return thrust;
