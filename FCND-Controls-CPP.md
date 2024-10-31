@@ -160,12 +160,11 @@ V3F QuadControl::BodyRateControl(V3F pqrCmd, V3F pqr)
   //  - you'll also need the gain parameter kpPQR (it's a V3F)
  
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-  V3F M = V3F(Ixx, Iyy, Izz);
+  V3F MoI = V3F(Ixx, Iyy, Izz);
   V3F pqrErr = pqrCmd - pqr;
   V3F pqrU_bar = kpPQR * pqrErr;
-  V3F momentCmd = M * pqrU_bar;
- 
-  /////////////////////////////// END STUDENT CODE ////////////////////////////
+  V3F momentCmd = MoI * pqrU_bar;
+   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
   return momentCmd;
 }
@@ -174,7 +173,6 @@ V3F QuadControl::BodyRateControl(V3F pqrCmd, V3F pqr)
 I then Implemented the  roll / pitch control as shown below. I experimented with the setting `QuadControlParams.kpBank` by changing it from 0.0 to 15 in steps of 5 to figure out a reasonable settling time on the roll of 0.240 seconds.
 
 ```c++
-// returns a desired roll and pitch rate 
 V3F QuadControl::RollPitchControl(V3F accelCmd, Quaternion<float> attitude, float collThrustCmd)
 {
   // Calculate a desired pitch and roll angle rates based on a desired global
@@ -192,25 +190,27 @@ V3F QuadControl::RollPitchControl(V3F accelCmd, Quaternion<float> attitude, floa
   //  - we already provide rotation matrix R: to get element R[1,2] (python) use R(1,2) (C++)
   //  - you'll need the roll/pitch gain kpBank
   //  - collThrustCmd is a force in Newtons! You'll likely want to convert it to acceleration first
-
+  
   V3F pqrCmd(0.0, 0.0, 0.0);
   Mat3x3F R = attitude.RotationMatrix_IwrtB();
-  float cmdByM = collThrustCmd / mass;
+
+  ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////  
+  float netAccel = collThrustCmd / mass;
 
   if ( collThrustCmd > 0 ) {  
     float b_x = R(0,2);
-    float b_x_c = -CONSTRAIN(accelCmd.x / cmdByM, -maxTiltAngle, maxTiltAngle);
+    float b_x_c = -CONSTRAIN(accelCmd.x / netAccel, -maxTiltAngle, maxTiltAngle);
     float b_x_err = b_x_c - b_x;
     float b_x_p_term = kpBank * b_x_err;
-
+    
     float b_y = R(1,2);
-    float b_y_c = -CONSTRAIN(accelCmd.y / cmdByM, -maxTiltAngle, maxTiltAngle);
+    float b_y_c = -CONSTRAIN(accelCmd.y / netAccel, -maxTiltAngle, maxTiltAngle);
     float b_y_err = b_y_c - b_y; 
     float b_y_p_term = kpBank * b_y_err;
-
+    
     float p_c = (R(1,0) * b_x_p_term - R(0,0) * b_y_p_term) / R(2,2);
     float q_c = (R(1,1) * b_x_p_term - R(0,1) * b_y_p_term) / R(2,2);
-
+    
     pqrCmd.x = p_c;
     pqrCmd.y = q_c;
     pqrCmd.z = 0.0;
@@ -235,7 +235,6 @@ The result of the code and the parameter tuning is shown below.
 For Scenario_3, I implemented teh LateralPositionControl and AltitudeControl as shown below.
 
 ```c++
-// returns a desired acceleration in global frame
 V3F QuadControl::LateralPositionControl(V3F posCmd, V3F velCmd, V3F pos, V3F vel, V3F accelCmdFF)
 {
   // Calculate a desired horizontal acceleration based on 
@@ -266,7 +265,7 @@ V3F QuadControl::LateralPositionControl(V3F posCmd, V3F velCmd, V3F pos, V3F vel
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
   V3F pos_err = posCmd - pos;
-  V3F vel_cmd = kpPosXY * pos_err;
+  V3F vel_cmd = velCmd + kpPosXY * pos_err;
   
   float vel_mag = vel_cmd.mag();
   if(vel_mag > maxSpeedXY)
@@ -286,8 +285,6 @@ V3F QuadControl::LateralPositionControl(V3F posCmd, V3F velCmd, V3F pos, V3F vel
 }
 
 ```
-
-
 
 ```c++
 float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, float velZ, Quaternion<float> attitude, float accelZCmd, float dt)
@@ -315,17 +312,19 @@ float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, flo
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
   float z_err = posZCmd - posZ;
-  float z_err_dot = velZCmd - velZ;
-  float b_z = R(2,2);
+  float z_term = kpPosZ * z_err;
 
-  float p_term = kpPosZ * z_err;
-  float d_term = kpVelZ * z_err_dot;
-  float i_term = KiPosZ * z_err * dt;
-  
-  float u_1_bar = p_term + d_term + i_term + accelZCmd;
-  
-  float z_acc = (u_1_bar - CONST_GRAVITY) / b_z;
-  thrust = -mass * z_acc;
+  integratedAltitudeError += z_err * dt;
+  float i_term = KiPosZ * integratedAltitudeError;
+
+  float z_dot_cmd = z_term + velZCmd;
+  z_dot_cmd = CONSTRAIN(z_dot_cmd, -maxAscentRate, maxDescentRate);
+
+  float z_dot_err = z_dot_cmd - velZ;
+  float z_dot_term = kpVelZ * z_dot_err;
+  float z_dot_dot_cmd = z_dot_term + i_term +  accelZCmd;
+
+  thrust = -(z_dot_dot_cmd - CONST_GRAVITY) * mass / R(2,2);
   /////////////////////////////// END STUDENT CODE ////////////////////////////
   
   return thrust;
@@ -336,20 +335,18 @@ I experimented with the parameters kpPosXY, KpPosZ, kpVelXY, kpVelZ till I found
 
 ```json
 # Position control gains
-kpPosXY = 4
-kpPosZ = 4
-KiPosZ = 80
+kpPosXY = 3
+kpPosZ = 8
+KiPosZ = 2
 
 # Velocity control gains
-kpVelXY = 16
-kpVelZ = 16
+kpVelXY = 9
+kpVelZ = 8
 
 # Angle control gains
 kpBank = 15
-kpYaw = 4
+kpYaw = 6
 ```
-
-
 
 The video below shows the first quad1 starting from 45 degree away from the target yaw and reach the target yaw angle gently. The gains also do not affect quad2 which starts with the target yaw angle.
 
@@ -364,7 +361,7 @@ In this part, we will explore some of the non-idealities and robustness of a con
  - The orange vehicle is an ideal quad
  - The red vehicle is heavier than usual
 
-1. Edited `AltitudeControl()` to add basic integral control to help with the different-mass vehicle.
+1. Edited `AltitudeControl()` to add basic integral control to help with the heavy mass vehicle.
 
    ```c++
    float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, float velZ, Quaternion<float> attitude, float accelZCmd, float dt)
@@ -415,7 +412,7 @@ In this part, we will explore some of the non-idealities and robustness of a con
 
    
 
-2. Changed the the kpPosXY = 3, kpPosZ = 8 and KiPosZ = 2 to make it work for all three cases as shown in the video below.
+2. Changed the the kpPosXY = 3, kpPosZ = 8 and KiPosZ = 2 to make it work for all three cases as shown in the video below.  The KiPosZ value was critical to getting the red drone to reach its goal.
 
 <p align="center">
 <img src="docs/Scenario_4.mov" width="500"/>
@@ -427,8 +424,6 @@ Now that we have all the working parts of a controller, you will put it all toge
  - the orange one is following `traj/FigureEight.txt`
  - the other one is following `traj/FigureEightFF.txt` - for now this is the same trajectory.  For those interested in seeing how you might be able to improve the performance of your drone by adjusting how the trajectory is defined, check out **Extra Challenge 1** below!
 
-###  ###
-
 
 ### Extra Challenge 1 (Optional) ###
 
@@ -439,44 +434,33 @@ You will notice that initially these two trajectories are the same. Let's work o
 2. Generate a new `FigureEightFF.txt` that has velocity terms
 Did the velocity-specified trajectory make a difference? Why?
 
-With the two different trajectories, your drones' motions should look like this:
-
-
-
-<p align="center">
-<img src="animations/scenario5.gif" width="500"/>
-</p>
 Clearly the red drone with the FigureEightFF.txt as its input is tracking the trajectory better. This is due to the extra velocity information it has compared to the orange drone which has the bare FigureEight.txt. The velocity information can help with providing the best velocity commands as inputs to the altitude controller and the lateral controller.
+
+
 
 <p align="center">
 <img src="docs/Scenario_5.mov" width="500"/>
 </p>
 
-###  ###
+The video below shows the effect of the using the output of the FigureEightFF.txt obtained from the GeneratePeriodicTrajectory.py script. Clearly the additional XYZ velocity information helps with the tracking compared to the trajectory without the velocity information. 
 
 <p align="center">
 <img src="docs/Scenario_5b.mov" width="500"/>
 </p>
 
-###  ###
-
 ### Extra Challenge 2 (Optional) ###
 
 I think providing the roll pitch and yaw along with XYZ positions and XYZ velocities and their associated angular velocities on the trajectory may help with even better tracking.
 
-How about trying to fly this trajectory as quickly as possible (but within following threshold)!
+I think one possible way to fly this trajectory as quickly as possible would be to lower the cycle time of the control algorithm from the current 0.05 seconds by an order of magnitude. This will result in a massive increase in computation.
 
 ### Scenario 6 ###
 
 I ran the TestManyQuads and the result is shown below.
 
-###  ###
-
 <p align="center">
 <img src="docs/Scenario_6.mov" width="500"/>
 </p>
-
-###  ###
 
 
 ## Evaluation ##
@@ -507,7 +491,7 @@ kpPQR = 50, 50, 10
 
 ### Performance Metrics ###
 
-The specific performance metrics are as follows:
+I confirmed that the code and the parameters were tuned to reach the specific performance metrics which are as follows:
 
  - scenario 2
    - roll should less than 0.025 radian of nominal for 0.75 seconds (3/4 of the duration of the loop)
